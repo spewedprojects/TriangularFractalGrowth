@@ -31,6 +31,7 @@ class TriGrowthGUI:
         for s in ('LEFT', 'RIGHT', 'BOTH'):
             tk.Radiobutton(ctrl, text=s, variable=self.side, value=s).pack(anchor='w')
 
+        # --- visibility toggles
         tk.Label(ctrl, text='Visibility', font=('Arial', 10, 'bold')).pack(pady=(10,0))
         self.v_dots = tk.IntVar(value=1)
         self.v_rows = tk.IntVar(value=1)
@@ -165,15 +166,66 @@ class TriGrowthGUI:
         for tag in self.state.undone:
             cv.itemconfigure(tag, state='hidden')
 
+    # ------------------------------------------------ true outer silhouette
     def update_hull(self):
-        self.cv.delete('hull')
-        pts = [p for row in self.state.rows for p in row]
-        if len(pts) < 3:
+        cv = self.cv
+        cv.delete('hull')
+
+        # 1. gather undirected edges of every triangle
+        edge_cnt = {}  # {(p,q): occurrences}
+        for item in cv.find_withtag('tri'):
+            x1, y1, x2, y2 = map(int, map(round, cv.coords(item)))
+            p = (x1, y1);
+            q = (x2, y2)
+            key = tuple(sorted([p, q]))
+            edge_cnt[key] = edge_cnt.get(key, 0) + 1
+
+        # 2. boundary edges: appear exactly once
+        boundary = [e for e, n in edge_cnt.items() if n == 1]
+        if len(boundary) < 3:
+            self.update_visibility()
             return
-        hull = gm.convex_hull(pts)
-        for i in range(len(hull)):
-            p, q = hull[i], hull[(i+1) % len(hull)]
-            self.cv.create_line(*p, *q, tags=('hull',))
+
+        # 3. adjacency   vertex -> [neigh, neigh]
+        adj = {}
+        for p, q in boundary:
+            adj.setdefault(p, []).append(q)
+            adj.setdefault(q, []).append(p)
+
+        # 4. walk every loop using a visited-edge set
+        visited = set()  # edge keys we've drawn
+        loops = []
+        for start in list(adj):
+            # skip vertices whose incident edges are done
+            if all(tuple(sorted((start, n))) in visited for n in adj[start]):
+                continue
+            loop = [start]
+            prev, curr = None, start
+            while True:
+                # pick the first neighbour whose edge is still unvisited
+                nxt = None
+                for n in adj[curr]:
+                    key = tuple(sorted((curr, n)))
+                    if key not in visited:
+                        nxt = n
+                        visited.add(key)
+                        break
+                if nxt is None:
+                    break  # open fragment, shouldn’t happen
+                loop.append(nxt)
+                if nxt == start:
+                    break  # closed the loop
+                prev, curr = curr, nxt
+            if len(loop) > 2:
+                loops.append(loop)
+
+        # 5. draw the loops
+        for loop in loops:
+            for i in range(len(loop) - 1):
+                p, q = loop[i], loop[i + 1]
+                cv.create_line(*p, *q, tags=('hull',))
+
+        # 6. honour visibility toggle
         self.update_visibility()
 
     # ------------------------------------------------ export
