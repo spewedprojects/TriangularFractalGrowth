@@ -9,7 +9,7 @@ if sys.platform.startswith('win'):
 # ----------------------------------------------------------------------------
 
 import tkinter as tk
-from gui import TriGrowthGUI
+from controllers import TriGrowthController
 
 root = tk.Tk()
 # --- Tk scaling -------------------------------------------------------------
@@ -20,5 +20,5 @@ scale = dpi / 64          # 72 points per inch
 root.tk.call('tk', 'scaling', scale)
 # ----------------------------------------------------------------------------
 root.title('Triangular Growth Prototype (modular)')
-TriGrowthGUI(root)
+TriGrowthController(root)
 root.mainloop()
