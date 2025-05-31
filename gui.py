@@ -320,43 +320,67 @@ class TriGrowthGUI:
             return
 
         cv = self.cv
-        visible = [i for i in cv.find_all()
-                   if cv.itemcget(i, 'state') != 'hidden']
+        visible = [i for i in cv.find_all() if cv.itemcget(i, 'state') != 'hidden']
         if not visible:
             messagebox.showinfo('Export', 'Nothing visible to export')
             return
 
-        # bounding-box of visible items
+        # 1. Compute bounding box of all visible items
         xs, ys = [], []
         for item in visible:
             coords = list(map(float, cv.coords(item)))
-            xs.extend(coords[0::2]);
+            xs.extend(coords[0::2])
             ys.extend(coords[1::2])
 
         margin = 10
-        min_x, min_y = min(xs) - margin, min(ys) - margin
-        max_x, max_y = max(xs) + margin, max(ys) + margin
-        w, h = max_x - min_x, max_y - min_y
-        shift = lambda v, off: v - off  # translate helper
+        min_x = min(xs) - margin
+        min_y = min(ys) - margin
+        max_x = max(xs) + margin
+        max_y = max(ys) + margin
 
-        dwg = svgwrite.Drawing(path, size=(w, h))
+        width = max_x - min_x
+        height = max_y - min_y
 
+        # 2. Create the SVG drawing with that exact size
+        dwg = svgwrite.Drawing(path, size=(width, height))
+        shift = lambda v, off: v - off  # to translate coords into [0..width] × [0..height]
+
+        # 3. Read current line thickness
+        lw = self.line_thickness.get()
+
+        # 4. Add each visible item to the SVG
         for item in visible:
             typ = cv.type(item)
             coords = list(map(float, cv.coords(item)))
 
             if typ == 'oval':
+                # draw a circle for each dot (filled)
                 x1, y1, x2, y2 = coords
                 cx = shift((x1 + x2) / 2, min_x)
                 cy = shift((y1 + y2) / 2, min_y)
                 r = (x2 - x1) / 2
-                dwg.add(dwg.circle(center=(cx, cy), r=r,
-                                   fill=cv.itemcget(item, 'fill')))
+                fillcol = cv.itemcget(item, 'fill')
+                dwg.add(
+                    dwg.circle(
+                        center=(cx, cy),
+                        r=r,
+                        fill=fillcol,
+                        stroke='none'
+                    )
+                )
+
             elif typ == 'line':
+                # draw a line with stroke-width = current line thickness
                 x1, y1, x2, y2 = coords
-                dwg.add(dwg.line(start=(shift(x1, min_x), shift(y1, min_y)),
-                                 end=(shift(x2, min_x), shift(y2, min_y)),
-                                 stroke='#000'))
+                dwg.add(
+                    dwg.line(
+                        start=(shift(x1, min_x), shift(y1, min_y)),
+                        end=(shift(x2, min_x), shift(y2, min_y)),
+                        stroke='#000',
+                        stroke_width=lw
+                    )
+                )
+
         dwg.save()
 
     def _export_png(self, path):
