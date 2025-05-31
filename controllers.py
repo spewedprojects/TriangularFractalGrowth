@@ -16,7 +16,7 @@ class TriGrowthController:
         canvas_frame = tk.Frame(root)
         canvas_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        self.canvas = tk.Canvas(canvas_frame, width=1000, height=700, bg='white')
+        self.canvas = tk.Canvas(canvas_frame, width=1500, height=1500, bg='white')
         sb_v = tk.Scrollbar(canvas_frame, orient=tk.VERTICAL, command=self.canvas.yview)
         sb_h = tk.Scrollbar(canvas_frame, orient=tk.HORIZONTAL, command=self.canvas.xview)
         self.canvas.config(yscrollcommand=sb_v.set, xscrollcommand=sb_h.set)

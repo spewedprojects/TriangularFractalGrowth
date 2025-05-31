@@ -12,8 +12,8 @@ except ImportError:
 
 def export_svg(canvas: tk.Canvas, line_thickness_var: tk.IntVar, path: str):
     """
-    Export only the visible items of `canvas` to an SVG file at `path`,
-    preserving the current line‐thickness for all <line> elements.
+    Export only *visible* canvas items to SVG, preserving current line thickness
+    for <line> elements.
     """
     try:
         import svgwrite
@@ -27,7 +27,6 @@ def export_svg(canvas: tk.Canvas, line_thickness_var: tk.IntVar, path: str):
         messagebox.showinfo('Export', 'Nothing visible to export')
         return
 
-    # 1) Compute bounding box of visible items
     xs, ys = [], []
     for item in visible:
         coords = list(map(float, cv.coords(item)))
@@ -46,39 +45,39 @@ def export_svg(canvas: tk.Canvas, line_thickness_var: tk.IntVar, path: str):
     dwg = svgwrite.Drawing(path, size=(width, height))
     lw = line_thickness_var.get()
 
-    # 2) Draw each visible item
     for item in visible:
         typ = cv.type(item)
         coords = list(map(float, cv.coords(item)))
 
         if typ == 'oval':
             x1, y1, x2, y2 = coords
-            cx = shift((x1 + x2) / 2, min_x)
-            cy = shift((y1 + y2) / 2, min_y)
-            r = (x2 - x1) / 2
+            cx = shift((x1 + x2)/2, min_x)
+            cy = shift((y1 + y2)/2, min_y)
+            r = (x2 - x1)/2
             fillcol = cv.itemcget(item, 'fill')
             dwg.add(dwg.circle(center=(cx, cy), r=r, fill=fillcol, stroke='none'))
 
         elif typ == 'line':
             x1, y1, x2, y2 = coords
-            dwg.add(dwg.line(start=(shift(x1, min_x), shift(y1, min_y)),
-                             end  =(shift(x2, min_x), shift(y2, min_y)),
-                             stroke='#000', stroke_width=lw))
+            dwg.add(dwg.line(
+                start=(shift(x1, min_x), shift(y1, min_y)),
+                end  =(shift(x2, min_x), shift(y2, min_y)),
+                stroke='#000', stroke_width=lw
+            ))
 
     dwg.save()
 
 
 def export_png(canvas: tk.Canvas, path: str):
     """
-    Export only the visible items of `canvas` to a PNG at `path`.
-    Temporarily disable hidden items so the PostScript snapshot contains only
-    the visible ones, then restore their “hidden” state.
+    Export only *visible* canvas items to PNG. Temporarily disable hidden items to
+    get a clean PostScript snapshot.
     """
     if Image is None:
         messagebox.showerror('Export', 'Pillow required')
         return
 
-    scale = simpledialog.askinteger('PNG scale', 'Scale (1–10)', initialvalue=1, minvalue=1, maxvalue=10)
+    scale = simpledialog.askinteger('PNG scale','Scale (1–10)',initialvalue=1,minvalue=1,maxvalue=10)
     if not scale:
         return
 
@@ -97,31 +96,53 @@ def export_png(canvas: tk.Canvas, path: str):
     img.save(path)
 
 
-def export_obj(triangles_3d: list, path: str):
+def export_obj(canvas_mgr, filepath):
     """
-    Export the 3D triangles (`triangles_3d`) to a Wavefront OBJ file at `path`.
-    Each triangle in `triangles_3d` is a tuple of three (x, y, z) coordinates.
-    We write each triangle with three unique vertices (no vertex sharing).
-    """
-    if not triangles_3d:
-        messagebox.showinfo('Export', 'No 3D data to export. Add at least one layer.')
-        return
+    Export the current 3D mesh (canvas_mgr.triangles_3d) to a Wavefront .obj file.
 
-    vertices = []
+    canvas_mgr.triangles_3d is assumed to be a list of triangles, each triangle being
+    a tuple of three 3D points: ((x1,y1,z1), (x2,y2,z2), (x3,y3,z3)).
+
+    This function rebuilds the vertex list each time from scratch, so that
+    undo/redo has no lingering stale vertices or faces.
+    """
+
+    # 1) Build a fresh vertex→index map and a flat list of unique vertices
+    vert_map = {}     # dict: (x,y,z) → OBJ_index (1-based)
+    vertices = []     # list of (x,y,z) in the order we first see them
+
+    for tri in canvas_mgr.triangles_3d:
+        for v in tri:
+            if v not in vert_map:
+                # First time seeing this vertex tuple, assign next OBJ index
+                vert_map[v] = len(vertices) + 1   # OBJ indices are 1-based
+                vertices.append(v)
+
+    # 2) Build a flat list of faces (using the new indexing scheme)
     faces = []
-    for tri in triangles_3d:
-        base_idx = len(vertices)  # 0‐based index for new batch of 3 verts
-        vertices.extend(tri)
-        faces.append((base_idx + 1, base_idx + 2, base_idx + 3))  # OBJ indices are 1-based
+    for tri in canvas_mgr.triangles_3d:
+        # tri is ((x1,y1,z1), (x2,y2,z2), (x3,y3,z3))
+        idx1 = vert_map[tri[0]]
+        idx2 = vert_map[tri[1]]
+        idx3 = vert_map[tri[2]]
+        faces.append((idx1, idx2, idx3))
 
+    # 3) Write out the .obj file
     try:
-        with open(path, 'w') as f:
-            f.write("# Triangular Growth 3D OBJ\n")
-            for v in vertices:
-                f.write(f"v {v[0]} {v[1]} {v[2]}\n")
-            for face in faces:
-                f.write(f"f {face[0]} {face[1]} {face[2]}\n")
+        with open(filepath, 'w') as f:
+            f.write("# Triangular Growth OBJ\n")
+            f.write("# vertex count: {}\n".format(len(vertices)))
+            f.write("# face count: {}\n\n".format(len(faces)))
 
-        messagebox.showinfo('Export', f'OBJ saved to:\n{os.path.abspath(path)}')
+            # Write vertices
+            for (x, y, z) in vertices:
+                f.write("v {:.6f} {:.6f} {:.6f}\n".format(x, y, z))
+            f.write("\n")
+
+            # Write faces
+            for (i1, i2, i3) in faces:
+                f.write("f {} {} {}\n".format(i1, i2, i3))
+
+        print(f"Exported OBJ successfully to: {filepath}")
     except Exception as e:
-        messagebox.showerror('Export', f'Failed to write OBJ:\n{e}')
+        print("Error exporting OBJ:", e)
